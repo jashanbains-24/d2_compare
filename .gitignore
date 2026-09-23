@@ -20,7 +20,7 @@ data/
 # Coverage Reports
 .nyc_output/
 
-# Normal Things
+# Normal Things (ignore)
 .DS_Store
 .env
 *.log
