@@ -380,6 +380,7 @@ paths:
 
         5. **Extract room information:** For each link identified in `index.htm`:
            - The linked file is read relative to the zip root
+           - The building's campus is extracted as the text content of element with class `ubc7-campus`
            - A table with class `views-table` is located in the linked file
            - For each row in the table, the following information is extracted:
              - **number**: Text content from the `<a>` element in the cell with class `views-field-field-room-number`
@@ -388,7 +389,7 @@ paths:
              - **type**: Text content from the cell with class `views-field-field-room-type`
              - **href**: The `href` attribute from the `<a>` element in the cell with class `views-field-nothing`
              - A row is skipped if any required element with the specified CSS class is not found.
-           - If the file does not exist in the zip, the file cannot be parsed, or the room table is not found in the file, no room information is extracted for that building (but the building is still valid)
+           - If the file does not exist in the zip, the file cannot be parsed, or the room table is not found in the file, no room information is extracted for that building (but the building is still valid). If the file does not exist or cannot be parsed, the building also has no campus.
 
         6. **Extract geolocation information:** For each building extracted in step 4:
            - A GET request is sent to the geolocation service using the URL-encoded building address extracted from `index.htm`
@@ -405,6 +406,9 @@ paths:
              - `address` set to the building's address
              - `lat` set to the latitude from geolocation
              - `lon` set to the longitude from geolocation
+             - 'campus' set to the campus extracted in step 5, if any (omit otherwise)
+          
+           - Unlike `PUT`, a dataset upload treats `campus` as part of the snapshot: if an existing building has a campus but its page in the new dataset has no campus header, the campus is removed.
 
            - If the building exists, update it only if any field value in the mapping above differs from the current resource.
 
@@ -1027,7 +1031,7 @@ paths:
 
         ```ebnf
         mfield ::= 'lat' | 'lon' | 'seats'
-        sfield ::= 'address' | 'building' | 'furniture' | 'href' | 'name' | 'number' | 'type'
+        sfield ::= 'address' | 'building' | 'campus' | 'furniture' | 'href' | 'name' | 'number' | 'type'
         ```
 
         #### Aggregation
@@ -1997,7 +2001,11 @@ paths:
                 message: "no building with id 'DMP'"
     put:
       summary: Create or replace a building
-      description: If the building already exists, the entire building is replaced; otherwise it is created.
+      description: >-
+        If the building already exists, the entire building is replaced; otherwise it is created.
+        Exception: `campus` is optional, and if it is omitted from the request body when replacing an
+        existing building, the building's current campus is kept. A `campus` value that is present
+        must be a string, otherwise a 422 is returned with `fields.campus: "expected a string"`.
       requestBody:
         content:
           application/json:
@@ -2015,6 +2023,7 @@ paths:
               address: 6245 Agronomy Road V6T 1Z4
               lat: 49.26125
               lon: -123.24807
+              campus: "vancouver campus"
       responses:
         "201":
           description: Building created successfully
@@ -2028,6 +2037,7 @@ paths:
                 address: 6245 Agronomy Road V6T 1Z4
                 lat: 49.26125
                 lon: -123.24807
+                campus: "vancouver campus"
                 links:
                   self: "/api/v2/buildings/DMP"
                   rooms: "/api/v2/buildings/DMP/rooms"
@@ -2554,7 +2564,7 @@ components:
               format: uri-reference
     Building:
       type: object
-      description: All properties are included in the response.
+      description: All properties are included in the response, except `campus`, which is omitted when the building has no campus.
       properties:
         id:
           type: string
@@ -2572,6 +2582,11 @@ components:
         lon:
           type: number
           description: The longitude of the building.
+        campus:
+          type: string
+          description: >-
+            The campus where the building is located. Optional. If not provided, the
+            building's campus is not included in the response.
         links:
           type: object
           readOnly: true
