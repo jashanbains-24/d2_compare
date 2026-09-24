@@ -406,11 +406,11 @@ paths:
              - `address` set to the building's address
              - `lat` set to the latitude from geolocation
              - `lon` set to the longitude from geolocation
-             - 'campus' set to the campus extracted in step 5, if any (omit otherwise)
-          
-           - Unlike `PUT`, a dataset upload treats `campus` as part of the snapshot: if an existing building has a campus but its page in the new dataset has no campus header, the campus is removed.
+             - `campus` set to the campus extracted in step 5, if any (omitted otherwise)
 
            - If the building exists, update it only if any field value in the mapping above differs from the current resource.
+
+           - Unlike `PUT`, a dataset upload treats `campus` as part of the snapshot: if an existing building has a campus but its page in the new dataset has no campus header, the campus is removed.
 
            - The resulting building resource is validated against the same requirements as building data added through `PUT /api/v2/buildings/{building}`. If required building data is missing or invalid, no building resource is loaded.
 
@@ -1033,6 +1033,14 @@ paths:
         mfield ::= 'lat' | 'lon' | 'seats'
         sfield ::= 'address' | 'building' | 'campus' | 'furniture' | 'href' | 'name' | 'number' | 'type'
         ```
+
+        #### Note on `campus`
+
+        `campus` is optional on buildings. For rooms whose building has no campus:
+        - `IS` on `campus` never matches, including the wildcard `"*"`; `NOT` + `IS` on `campus` does match.
+        - When `campus` is in `COLUMNS`, the key is omitted from that result object.
+        - When grouping by `campus`, these rooms form one group whose result object has no `campus` key.
+        - When ordering by `campus`, they sort before all campus values with `UP` (after them with `DOWN`).
 
         #### Aggregation
 
@@ -1933,6 +1941,7 @@ paths:
                     address: 6245 Agronomy Road V6T 1Z4
                     lat: 49.26125
                     lon: -123.24807
+                    campus: "vancouver campus"
                     links:
                       self: "/api/v2/buildings/DMP"
                       rooms: "/api/v2/buildings/DMP/rooms"
@@ -1987,6 +1996,7 @@ paths:
                 address: 6245 Agronomy Road V6T 1Z4
                 lat: 49.26125
                 lon: -123.24807
+                campus: "vancouver campus"
                 links:
                   self: "/api/v2/buildings/DMP"
                   rooms: "/api/v2/buildings/DMP/rooms"
@@ -2068,6 +2078,9 @@ paths:
                       lon:
                         type: string
                         enum: ["required but missing", "expected a number"]
+                      campus:
+                        type: string
+                        enum: ["expected a string"]
               example:
                 error: "Validation failed"
                 fields:
@@ -2098,6 +2111,9 @@ paths:
                   lon:
                     description: The longitude of the building.
                     type: number
+                  campus:
+                    description: The campus where the building is located. Omitted if the building has no campus.
+                    type: string
                   rooms:
                     description: The number of rooms that were removed with the building.
                     type: integer
@@ -2108,6 +2124,7 @@ paths:
                 address: 6245 Agronomy Road V6T 1Z4
                 lat: 49.26125
                 lon: -123.24807
+                campus: "vancouver campus"
                 rooms: 82
         "404":
           description: The building does not exist
@@ -2585,8 +2602,9 @@ components:
         campus:
           type: string
           description: >-
-            The campus where the building is located. Optional. If not provided, the
-            building's campus is not included in the response.
+            The campus where the building is located (e.g. "vancouver campus" or "okanagan campus"). Optional. If the
+            building has no campus, this key is omitted from responses (never null or an empty string).
+            When replacing a building with PUT, omitting `campus` keeps the existing value.
         links:
           type: object
           readOnly: true
