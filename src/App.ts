@@ -1,3 +1,4 @@
+// Express application + contains a lot of old facilities/older logic
 import fs from "fs/promises";
 //import * as parse5 from "parse5";
 import express from "express";
@@ -132,7 +133,8 @@ export async function createApp(config: AppConfig): Promise<Application> {
 			req.body.name,
 			req.body.address,
 			req.body.lat,
-			req.body.lon
+			req.body.lon,
+			req.body.campus
 		);
 		res.status(output.status).send(output.body);
 	});
@@ -567,9 +569,16 @@ export class Model {
 		};
 	}
 
-	public async setBuilding(buildingId: string, name: any, address: any, lat: any, lon: any): Promise<ApiOutput> {
+	public async setBuilding(
+		buildingId: string,
+		name: any,
+		address: any,
+		lat: any,
+		lon: any,
+		campus?: any
+	): Promise<ApiOutput> {
 		await this.readBuildings();
-		const valid = validateBuildingParams(name, address, lat, lon);
+		const valid = validateBuildingParams(name, address, lat, lon, campus);
 		if (!valid.valid) {
 			return {
 				status: 422,
@@ -579,12 +588,15 @@ export class Model {
 				},
 			};
 		}
-		let exist = false;
-		if (this.data.buildings.find((building) => building.id === buildingId)) {
+
+		const existingBuilding = this.data.buildings.find((building) => building.id === buildingId); // keep a ref to the building
+		let exist = false; // check if the building exists
+		if (existingBuilding) {
 			exist = true;
-			await this.deleteBuilding(buildingId);
+			await this.deleteBuilding(buildingId); // delete the building if it exists
 		}
-		const building = new Building(buildingId, name, address, lat, lon);
+		const finalCampus = campus !== undefined ? campus : existingBuilding?.campus; // use the campus from the request if provided, otherwise use the existing old campus as the building was already existing
+		const building = new Building(buildingId, name, address, lat, lon, finalCampus);
 		this.data.buildings.push(building);
 		await this.writeBuildings();
 		if (exist) {
@@ -1027,6 +1039,17 @@ class BuildingsDataset extends Dataset {
 		return false;
 	}
 
+	private findCampus(document: parse5.DefaultTreeAdapterTypes.Document): ParseElement | undefined {
+		let result: ParseElement | undefined = undefined;
+		document.childNodes.forEach((child) => {
+			const campusNode = this.searchChildForElement(child, "ubc7-campus");
+			if (campusNode !== undefined && campusNode !== null) {
+				result = campusNode;
+			}
+		});
+		return result;
+	}
+
 	private findFullname(row: ParseNode): ParseElement | undefined {
 		return this.searchChildForElement(row, "views-field-title");
 	}
@@ -1167,6 +1190,11 @@ class BuildingsDataset extends Dataset {
 					try {
 						const buildingJSON: parse5.DefaultTreeAdapterTypes.Document = parse5.parse(htmlString);
 
+						const campusNode = this.findCampus(buildingJSON);
+						if (campusNode !== undefined && campusNode !== null) {
+							building.first.campus = this.getTextFromNode(campusNode);
+						}
+
 						const roomsTable: ParseElement | undefined = this.findTable(buildingJSON);
 
 						if (roomsTable !== undefined && roomsTable !== null) {
@@ -1240,7 +1268,13 @@ class BuildingsDataset extends Dataset {
 	}
 
 	private buildingParamsMatch(b1: Building, b2: Building): boolean {
-		return b1.lat === b2.lat && b1.lon === b2.lon && b1.name === b2.name && b1.address === b2.address;
+		return (
+			b1.lat === b2.lat &&
+			b1.lon === b2.lon &&
+			b1.name === b2.name &&
+			b1.address === b2.address &&
+			b1.campus === b2.campus
+		);
 	}
 
 	private roomParamsMatch(r1: Room, r2: Room): boolean {
@@ -1334,6 +1368,7 @@ class BuildingsDataset extends Dataset {
 				match.first.first.address = building.address;
 				match.first.first.lat = building.lat;
 				match.first.first.lon = building.lon;
+				match.first.first.campus = building.campus;
 
 				match = this.combineRooms(match, building);
 
@@ -1690,6 +1725,7 @@ type BuildingJSONLinks = {
 	address: string;
 	lat: number;
 	lon: number;
+	campus?: string;
 	links: { self: string; rooms: string };
 };
 
@@ -1699,6 +1735,7 @@ type BuildingJSONFull = {
 	address: string;
 	lat: number;
 	lon: number;
+	campus?: string;
 	rooms: RoomJSONFull[];
 };
 
@@ -1708,6 +1745,7 @@ type BuildingJSONForDelete = {
 	address: string;
 	lat: number;
 	lon: number;
+	campus?: string;
 	rooms: number;
 };
 
@@ -1717,7 +1755,8 @@ class Building {
 		public name: string,
 		public address: string,
 		public lat: number,
-		public lon: number
+		public lon: number,
+		public campus?: string
 	) {}
 
 	public rooms: Room[] = [];
@@ -1733,6 +1772,7 @@ class Building {
 				self: `${prefixBuildings}/${this.id}`,
 				rooms: `${prefixBuildings}/${this.id}/rooms`,
 			},
+			campus: this.campus !== undefined ? this.campus : undefined,
 		};
 	}
 
@@ -1744,6 +1784,7 @@ class Building {
 			lat: this.lat,
 			lon: this.lon,
 			rooms: this.rooms.map((room) => room.getJSONFull()),
+			campus: this.campus !== undefined ? this.campus : undefined,
 		};
 	}
 
@@ -1755,11 +1796,12 @@ class Building {
 			lat: this.lat,
 			lon: this.lon,
 			rooms: this.rooms.length,
+			campus: this.campus !== undefined ? this.campus : undefined,
 		};
 	}
 
 	public static buildBuilding(data: Building): Building {
-		const newBuilding = new Building(data.id, data.name, data.address, data.lat, data.lon);
+		const newBuilding = new Building(data.id, data.name, data.address, data.lat, data.lon, data.campus);
 		newBuilding.rooms = data.rooms.map((room: Room) => Room.buildRoom(room, newBuilding));
 		return newBuilding;
 	}
@@ -2423,7 +2465,13 @@ function validateSearchParamsV2(body: any): { valid: boolean; fields: any } {
 	};
 }
 
-function validateBuildingParams(name: any, address: any, lat: any, lon: any): { valid: boolean; fields: any } {
+function validateBuildingParams(
+	name: any,
+	address: any,
+	lat: any,
+	lon: any,
+	campus?: any
+): { valid: boolean; fields: any } {
 	let valid = true;
 	const error: any = {};
 	if (name === undefined) {
@@ -2452,6 +2500,10 @@ function validateBuildingParams(name: any, address: any, lat: any, lon: any): { 
 		valid = false;
 	} else if (typeof lon !== "number") {
 		error.lon = "expected a number";
+		valid = false;
+	}
+	if (campus !== undefined && typeof campus !== "string") {
+		error.campus = "expected a string";
 		valid = false;
 	}
 	return {
