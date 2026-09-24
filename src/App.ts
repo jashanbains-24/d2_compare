@@ -2322,7 +2322,38 @@ function ordering(a: any, b: any, fields: string[]): number {
 }
 
 function transformList(list: Section[] | Room[], transformation: { GROUP: string[]; APPLY: any[] }): any[] {
-	return [];
+	const groups = new Map<string, (Section | Room)[]>();
+	for (const entry of list) {
+		const groupKey = JSON.stringify(transformation.GROUP.map((key) => entry.getValue(key)));
+		const bucket = groups.get(groupKey);
+		if (bucket) bucket.push(entry);
+		else groups.set(groupKey, [entry]);
+	}
+	const output: any[] = [];
+	for (const entries of groups.values()) {
+		const row: any = {};
+		for (const key of transformation.GROUP) row[key] = entries[0].getValue(key);
+		for (const rule of transformation.APPLY) {
+			const applyKey = Object.keys(rule)[0];
+			const token = Object.keys(rule[applyKey])[0];
+			const field = rule[applyKey][token];
+			row[applyKey] = applyToken(
+				token,
+				entries.map((entry) => entry.getValue(field))
+			);
+		}
+		output.push(row);
+	}
+	return output;
+}
+
+function applyToken(token: string, values: any[]): number {
+	if (token === "MAX") return Math.max(...values);
+	if (token === "MIN") return Math.min(...values);
+	if (token === "COUNT") return new Set(values).size;
+	const sum = values.reduce((total: Decimal, value: number) => total.add(new Decimal(value)), new Decimal(0));
+	if (token === "SUM") return Number(sum.toFixed(2));
+	return Number(sum.div(values.length).toFixed(2));
 }
 
 async function validateDatasetParams(
