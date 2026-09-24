@@ -176,7 +176,7 @@ const prefixBuildings = "/api/v2/buildings";
 const SECTIONS_MKEY = ["avg", "pass", "fail", "audit", "year"];
 const SECTIONS_SKEY = ["title", "dept", "code", "instructor"];
 const ROOMS_MKEY = ["lat", "lon", "seats"];
-const ROOMS_SKEY = ["address", "building", "furniture", "href", "name", "number", "type"];
+const ROOMS_SKEY = ["address", "building", "campus", "furniture", "href", "name", "number", "type"];
 const SECTIONS_KEY = [...SECTIONS_MKEY, ...SECTIONS_SKEY];
 const ROOMS_KEY = [...ROOMS_MKEY, ...ROOMS_SKEY];
 const MKEY = [...SECTIONS_MKEY, ...ROOMS_MKEY];
@@ -1899,7 +1899,7 @@ class Room {
 	}
 
 	public getValue(key: string): any {
-		if (["name", "address", "lat", "lon"].includes(key)) return (this.building_obj.getJSONFull() as any)[key];
+		if (["name", "address", "lat", "lon", "campus"].includes(key)) return (this.building_obj.getJSONFull() as any)[key];
 		else return (this.getJSONFull() as any)[key];
 	}
 }
@@ -2314,7 +2314,7 @@ function includeString(str1: string | undefined, str2: string, prefix: boolean, 
 function ordering(a: any, b: any, fields: string[]): number {
 	for (const field of fields) {
 		let diff = 0;
-		if (SKEY.includes(field)) diff = a[field].localeCompare(b[field]);
+		if (SKEY.includes(field)) diff = (a[field] ?? "").localeCompare(b[field] ?? "");
 		else diff = a[field] - b[field];
 		if (diff !== 0) return diff;
 	}
