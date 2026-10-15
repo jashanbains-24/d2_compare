@@ -1,7 +1,8 @@
+import { FilterableRecord } from "../App";
 import { SectionJSONFull } from "../repositories/courseRepository";
 import { Course } from "./course";
 
-export class Section {
+export class Section implements FilterableRecord {
 	constructor(
 		public id: string,
 		public instructor: string,
@@ -16,6 +17,20 @@ export class Section {
 	public static async getSections(courseId: string): Promise<Section[] | undefined> {
 		const course = await Course.getCourseById(courseId);
 		return course === undefined ? undefined : course.getSections();
+	}
+
+	public isSame(other: FilterableRecord): boolean {
+		if (!(other instanceof Section)) return false;
+		return (
+			this.id === other.id &&
+			this.instructor === other.instructor &&
+			this.year === other.year &&
+			this.avg === other.avg &&
+			this.pass === other.pass &&
+			this.fail === other.fail &&
+			this.audit === other.audit &&
+			this.course.id === other.course.id
+		);
 	}
 
 	public static async getSectionById(courseId: string, sectionId: string): Promise<Section | SectionError> {
