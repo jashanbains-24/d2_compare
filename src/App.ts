@@ -2045,6 +2045,32 @@ export function filterRecords(
 		if (invalidSKey.includes(skey))
 			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
 		return { error: "", list: records.filter((record) => includeString(record.getValue(skey), str, prefix, suffix)) };
+	} else if (query.IN !== undefined && query.IN !== null) {
+		// check that IN is an object with exactly one key
+		if (typeof query.IN !== "object" || Object.keys(query.IN).length !== 1) {
+			return { error: "IN must be an object with one sfield and a non-empty array of strings", list: [] };
+		}
+
+		const skey = Object.keys(query.IN)[0];
+		const arr = query.IN[skey];
+
+		// check that the value is a non-empty array of strings
+		if (!Array.isArray(arr) || arr.length === 0 || !arr.every((item: any) => typeof item === "string")) {
+			return { error: "IN must be an object with one sfield and a non-empty array of strings", list: [] };
+		}
+
+		// check for dataset mixing (e.g., passing a facilities sfield to a course query)
+		if (invalidSKey.includes(skey)) {
+			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
+		}
+
+		// check that the key is actually a valid sfield (rejects mfields and unknown keys)
+		if (!validSKey.includes(skey)) {
+			return { error: "IN must be an object with one sfield and a non-empty array of strings", list: [] };
+		}
+
+		// execute the filter (exact match, case-sensitive, no wildcards parsed)
+		return { error: "", list: records.filter((record) => arr.includes(record.getValue(skey))) };
 	} else if (Object.keys(query).length > 0) {
 		return { error: "not filter", list: [] };
 	} else {

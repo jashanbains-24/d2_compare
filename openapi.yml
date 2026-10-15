@@ -978,9 +978,10 @@ paths:
         // Note: a BODY with no FILTER (i.e. WHERE:{}) matches all entries.
         BODY ::= 'WHERE:{' FILTER? '}'
 
-        FILTER ::= LOGICCOMPARISON | MCOMPARISON | SCOMPARISON | NEGATION
+        FILTER ::= LOGICCOMPARISON | MCOMPARISON | SCOMPARISON | INCOMPARISON | NEGATION
 
         LOGICCOMPARISON ::= LOGIC ':[' FILTER_LIST ']'
+        INCOMPARISON ::= '{' '"IN":' '{' skey ':' '[' string (',' string)* ']' '}' '}'
         MCOMPARISON ::= MCOMPARATOR ':{' mkey ':' number '}'
         SCOMPARISON ::= 'IS:{' skey ': "' [*]? inputstring [*]? '" }'  // Asterisks at the beginning or end of the inputstring should act as wildcards.
         NEGATION ::= 'NOT :{' FILTER '}'
@@ -1093,6 +1094,12 @@ paths:
         *inputstring*: Contains inputstring
         ```
         Asterisks in the middle are not allowed (for example, `input*string`).
+
+        #### IN Comparison
+
+        The `IN` operator matches a record if its value for the specified `sfield` is exactly 
+        equal (case-sensitive) to at least one string in the provided array. Duplicate strings in the array 
+        are allowed. Unlike `IS`, `IN` does no wildcard matching (`*` is treated as an ordinary character).
 
       requestBody:
         required: true
@@ -1221,6 +1228,7 @@ paths:
                         "EQ must be an object with one mfield of type number",
                         "IS must be an object with one sfield of type string",
                         "IS asterisks can only be first or last character",
+                        "IN must be an object with one sfield and a non-empty array of strings",
                         "Cannot mix course_offerings and facilities fields in one query",
                         "Missing GROUP in TRANSFORMATIONS",
                         "Missing APPLY in TRANSFORMATIONS",
