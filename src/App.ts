@@ -43,6 +43,11 @@ export type AppConfig = {
 	readonly datadir: string;
 };
 
+export interface FilterableRecord {
+	getValue(key: string): any;
+	isSame(other: FilterableRecord): boolean;
+}
+
 /**
  * Initializes the application.
  */
@@ -334,7 +339,7 @@ export class Model {
 
 		const sections: Section[] = [];
 		for (const course of this.data.courses) course.sections.map((section) => sections.push(section));
-		const filtered = filterSections(body.query.WHERE, sections);
+		const filtered = filterRecords(body.query.WHERE, sections, SECTIONS_MKEY, SECTIONS_SKEY, ROOMS_MKEY, ROOMS_SKEY);
 		if (filtered.error && filtered.error !== "no filter") {
 			if (filtered.error === "not filter") filtered.error = "WHERE must be an object with at most one FILTER";
 			return errorBadRequest(filtered.error);
@@ -453,7 +458,7 @@ export class Model {
 					return errorBadRequest("Invalid sort direction (must be UP or DOWN)");
 			}
 		}
-		let filtered: { error: string; list: Section[] | Room[] } = {
+		let filtered: { error: string; list: FilterableRecord[] } = {
 			error: "",
 			list: [],
 		};
@@ -462,13 +467,13 @@ export class Model {
 				return errorBadRequest("Cannot mix course_offerings and facilities fields in one query");
 			const sections: Section[] = [];
 			for (const course of this.data.courses) course.sections.map((section) => sections.push(section));
-			filtered = filterSections(body.query.WHERE, sections);
+			filtered = filterRecords(body.query.WHERE, sections, SECTIONS_MKEY, SECTIONS_SKEY, ROOMS_MKEY, ROOMS_SKEY);
 		} else if (body.kind === "facilities") {
 			if (body.query.OPTIONS.COLUMNS.some((column: string) => SECTIONS_KEY.includes(column)))
 				return errorBadRequest("Cannot mix course_offerings and facilities fields in one query");
 			const rooms: Room[] = [];
 			for (const building of this.data.buildings) building.rooms.map((room) => rooms.push(room));
-			filtered = filterRooms(body.query.WHERE, rooms);
+			filtered = filterRecords(body.query.WHERE, rooms, ROOMS_MKEY, ROOMS_SKEY, SECTIONS_MKEY, SECTIONS_SKEY);
 		}
 		if (filtered.error && filtered.error !== "no filter") {
 			if (filtered.error === "not filter") filtered.error = "WHERE must be an object with at most one FILTER";
@@ -1853,7 +1858,7 @@ class Building {
 	}
 }
 
-class Room {
+class Room implements FilterableRecord {
 	constructor(
 		public id: string,
 		public building: string,
@@ -1864,6 +1869,13 @@ class Room {
 		public seats: number,
 		public building_obj: Building
 	) {}
+
+	public isSame(other: FilterableRecord): boolean {
+		if (!(other instanceof Room)) {
+			return false;
+		}
+		return this.id === other.id && this.building === other.building;
+	}
 
 	public getJSONLinks(): RoomJSONLinks {
 		return {
@@ -1904,170 +1916,119 @@ class Room {
 	}
 }
 
-function sameSection(a: Section, b: Section): boolean {
-	return a.id === b.id && a.course.id === b.course.id;
-}
-
-function filterSections(query: any, sections: Section[]): { error: string; list: Section[] } {
+export function filterRecords(
+	query: any,
+	records: FilterableRecord[],
+	validMKey: string[],
+	validSKey: string[],
+	invalidMKey: string[],
+	invalidSKey: string[]
+): { error: string; list: FilterableRecord[] } {
 	if (typeof query !== "object" || Object.keys(query).length > 1) {
-		return {
-			error: "not filter",
-			list: [],
-		};
+		return { error: "not filter", list: [] };
 	} else if (query.AND !== undefined && query.AND !== null) {
 		if (
 			!Array.isArray(query.AND) ||
 			query.AND.length < 1 ||
 			!query.AND.every((filter: any) => typeof filter === "object")
 		) {
-			return {
-				error: "AND must be a non-empty array of FILTER objects",
-				list: [],
-			};
+			return { error: "AND must be a non-empty array of FILTER objects", list: [] };
 		}
-		let newList = [...sections];
+		let newList = [...records];
 		for (const filter of query.AND) {
-			const filtered = filterSections(filter, sections);
+			const filtered = filterRecords(filter, records, validMKey, validSKey, invalidMKey, invalidSKey);
 			if (filtered.error) {
 				if (filtered.error === "no filter" || filtered.error === "not filter") {
-					return {
-						error: "AND must be a non-empty array of FILTER objects",
-						list: [],
-					};
+					return { error: "AND must be a non-empty array of FILTER objects", list: [] };
 				} else return filtered;
 			}
-			newList = newList.filter((section) => filtered.list.some((other) => sameSection(other, section)));
+			newList = newList.filter((record) => filtered.list.some((other) => other.isSame(record)));
 		}
-		return {
-			error: "",
-			list: [...newList],
-		};
+		return { error: "", list: [...newList] };
 	} else if (query.OR !== undefined && query.OR !== null) {
 		if (
 			!Array.isArray(query.OR) ||
 			query.OR.length < 1 ||
 			!query.OR.every((filter: any) => typeof filter === "object")
 		) {
-			return {
-				error: "OR must be a non-empty array of FILTER objects",
-				list: [],
-			};
+			return { error: "OR must be a non-empty array of FILTER objects", list: [] };
 		}
-		let newList: Section[] = [];
+		let newList: FilterableRecord[] = [];
 		for (const filter of query.OR) {
-			const filtered = filterSections(filter, sections);
+			const filtered = filterRecords(filter, records, validMKey, validSKey, invalidMKey, invalidSKey);
 			if (filtered.error) {
 				if (filtered.error === "no filter" || filtered.error === "not filter") {
-					return {
-						error: "OR must be a non-empty array of FILTER objects",
-						list: [],
-					};
+					return { error: "OR must be a non-empty array of FILTER objects", list: [] };
 				} else return filtered;
 			}
-			newList = [
-				...newList,
-				...filtered.list.filter((other) => newList.every((section) => !sameSection(section, other))),
-			];
+			newList = [...newList, ...filtered.list.filter((other) => newList.every((record) => !record.isSame(other)))];
 		}
-		return {
-			error: "",
-			list: newList,
-		};
+		return { error: "", list: newList };
 	} else if (query.NOT !== undefined && query.NOT !== null) {
 		if (typeof query.NOT !== "object") {
-			return {
-				error: "NOT must be a FILTER object",
-				list: [],
-			};
+			return { error: "NOT must be a FILTER object", list: [] };
 		}
-		const filtered = filterSections(query.NOT, sections);
+		const filtered = filterRecords(query.NOT, records, validMKey, validSKey, invalidMKey, invalidSKey);
 		if (filtered.error) {
 			if (filtered.error === "no filter" || filtered.error === "not filter") {
-				return {
-					error: "NOT must be a FILTER object",
-					list: [],
-				};
+				return { error: "NOT must be a FILTER object", list: [] };
 			} else return filtered;
 		}
-		return {
-			error: "",
-			list: sections.filter((section) => filtered.list.every((other) => !sameSection(other, section))),
-		};
+		return { error: "", list: records.filter((record) => filtered.list.every((other) => !other.isSame(record))) };
 	} else if (query.LT !== undefined && query.LT !== null) {
 		if (
 			typeof query.LT !== "object" ||
 			Object.keys(query.LT).length !== 1 ||
 			typeof Object.values(query.LT)[0] !== "number"
 		) {
-			return {
-				error: "LT must be an object with one mfield of type number",
-				list: [],
-			};
+			return { error: "LT must be an object with one mfield of type number", list: [] };
 		}
 		const mkey = Object.keys(query.LT)[0];
-		const output = {
-			error: "",
-			list: [] as Section[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "LT must be an object with one mfield of type number";
-		else if (ROOMS_MKEY.includes(mkey)) output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = sections.filter((section) => section.getValue(mkey) < query.LT[mkey]);
-		return output;
+		if (!validMKey.includes(mkey) && !invalidMKey.includes(mkey))
+			return { error: "LT must be an object with one mfield of type number", list: [] };
+		if (invalidMKey.includes(mkey))
+			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
+		return { error: "", list: records.filter((record) => record.getValue(mkey) < query.LT[mkey]) };
 	} else if (query.GT !== undefined && query.GT !== null) {
 		if (
 			typeof query.GT !== "object" ||
 			Object.keys(query.GT).length !== 1 ||
 			typeof Object.values(query.GT)[0] !== "number"
 		) {
-			return {
-				error: "GT must be an object with one mfield of type number",
-				list: [],
-			};
+			return { error: "GT must be an object with one mfield of type number", list: [] };
 		}
 		const mkey = Object.keys(query.GT)[0];
-		const output = {
-			error: "",
-			list: [] as Section[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "GT must be an object with one mfield of type number";
-		else if (ROOMS_MKEY.includes(mkey)) output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = sections.filter((section) => section.getValue(mkey) > query.GT[mkey]);
-		return output;
+		if (!validMKey.includes(mkey) && !invalidMKey.includes(mkey))
+			return { error: "GT must be an object with one mfield of type number", list: [] };
+		if (invalidMKey.includes(mkey))
+			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
+		return { error: "", list: records.filter((record) => record.getValue(mkey) > query.GT[mkey]) };
 	} else if (query.EQ !== undefined && query.EQ !== null) {
 		if (
 			typeof query.EQ !== "object" ||
 			Object.keys(query.EQ).length !== 1 ||
 			typeof Object.values(query.EQ)[0] !== "number"
 		) {
-			return {
-				error: "EQ must be an object with one mfield of type number",
-				list: [],
-			};
+			return { error: "EQ must be an object with one mfield of type number", list: [] };
 		}
 		const mkey = Object.keys(query.EQ)[0];
-		const output = {
-			error: "",
-			list: [] as Section[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "EQ must be an object with one mfield of type number";
-		else if (ROOMS_MKEY.includes(mkey)) output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = sections.filter((section) => section.getValue(mkey) === query.EQ[mkey]);
-		return output;
+		if (!validMKey.includes(mkey) && !invalidMKey.includes(mkey))
+			return { error: "EQ must be an object with one mfield of type number", list: [] };
+		if (invalidMKey.includes(mkey))
+			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
+		return { error: "", list: records.filter((record) => record.getValue(mkey) === query.EQ[mkey]) };
 	} else if (query.IS !== undefined && query.IS !== null) {
 		if (
 			typeof query.IS !== "object" ||
 			Object.keys(query.IS).length !== 1 ||
 			typeof Object.values(query.IS)[0] !== "string"
 		) {
-			return {
-				error: "IS must be an object with one sfield of type string",
-				list: [],
-			};
+			return { error: "IS must be an object with one sfield of type string", list: [] };
 		}
 		const skey = Object.keys(query.IS)[0];
 		let str: string = String(Object.values(query.IS)[0]);
-		let suffix = true; // str has to be at the end
-		let prefix = true; // str has to be at the beginning
+		let suffix = true;
+		let prefix = true;
 		if (str.slice(-1) === "*") {
 			suffix = false;
 			str = str.slice(0, -1);
@@ -2077,229 +2038,17 @@ function filterSections(query: any, sections: Section[]): { error: string; list:
 			str = str.slice(1);
 		}
 		if (str.includes("*")) {
-			return {
-				error: "IS asterisks can only be first or last character",
-				list: [],
-			};
+			return { error: "IS asterisks can only be first or last character", list: [] };
 		}
-		const output = {
-			error: "",
-			list: [] as Section[],
-		};
-		if (!SKEY.includes(skey)) output.error = "IS must be an object with one sfield of type string";
-		else if (ROOMS_SKEY.includes(skey)) output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = sections.filter((section) => includeString(section.getValue(skey), str, prefix, suffix));
-		return output;
+		if (!validSKey.includes(skey) && !invalidSKey.includes(skey))
+			return { error: "IS must be an object with one sfield of type string", list: [] };
+		if (invalidSKey.includes(skey))
+			return { error: "Cannot mix course_offerings and facilities fields in one query", list: [] };
+		return { error: "", list: records.filter((record) => includeString(record.getValue(skey), str, prefix, suffix)) };
 	} else if (Object.keys(query).length > 0) {
-		return {
-			error: "not filter",
-			list: [],
-		};
+		return { error: "not filter", list: [] };
 	} else {
-		return {
-			error: "no filter",
-			list: sections,
-		};
-	}
-}
-
-function sameRoom(a: Room, b: Room): boolean {
-	return a.id === b.id && a.building === b.building;
-}
-
-function filterRooms(query: any, rooms: Room[]): { error: string; list: Room[] } {
-	if (typeof query !== "object" || Object.keys(query).length > 1) {
-		return {
-			error: "not filter",
-			list: [],
-		};
-	} else if (query.AND !== undefined && query.AND !== null) {
-		if (
-			!Array.isArray(query.AND) ||
-			query.AND.length < 1 ||
-			!query.AND.every((filter: any) => typeof filter === "object")
-		) {
-			return {
-				error: "AND must be a non-empty array of FILTER objects",
-				list: [],
-			};
-		}
-		let newList = [...rooms];
-		for (const filter of query.AND) {
-			const filtered = filterRooms(filter, rooms);
-			if (filtered.error) {
-				if (filtered.error === "no filter" || filtered.error === "not filter") {
-					return {
-						error: "AND must be a non-empty array of FILTER objects",
-						list: [],
-					};
-				} else return filtered;
-			}
-			newList = newList.filter((room) => filtered.list.some((other) => sameRoom(other, room)));
-		}
-		return {
-			error: "",
-			list: newList,
-		};
-	} else if (query.OR !== undefined && query.OR !== null) {
-		if (
-			!Array.isArray(query.OR) ||
-			query.OR.length < 1 ||
-			!query.OR.every((filter: any) => typeof filter === "object")
-		) {
-			return {
-				error: "OR must be a non-empty array of FILTER objects",
-				list: [],
-			};
-		}
-		let newList: Room[] = [];
-		for (const filter of query.OR) {
-			const filtered = filterRooms(filter, rooms);
-			if (filtered.error) {
-				if (filtered.error === "no filter" || filtered.error === "not filter") {
-					return {
-						error: "OR must be a non-empty array of FILTER objects",
-						list: [],
-					};
-				} else return filtered;
-			}
-			newList = [...newList, ...filtered.list.filter((other) => newList.every((room) => !sameRoom(room, other)))];
-		}
-		return {
-			error: "",
-			list: newList,
-		};
-	} else if (query.NOT !== undefined && query.NOT !== null) {
-		if (typeof query.NOT !== "object") {
-			return {
-				error: "NOT must be a FILTER object",
-				list: [],
-			};
-		}
-		const filtered = filterRooms(query.NOT, rooms);
-		if (filtered.error) {
-			if (filtered.error === "no filter" || filtered.error === "not filter") {
-				return {
-					error: "NOT must be a FILTER object",
-					list: [],
-				};
-			} else return filtered;
-		}
-		return {
-			error: "",
-			list: rooms.filter((room) => filtered.list.every((other) => !sameRoom(other, room))),
-		};
-	} else if (query.LT !== undefined && query.LT !== null) {
-		if (
-			typeof query.LT !== "object" ||
-			Object.keys(query.LT).length !== 1 ||
-			typeof Object.values(query.LT)[0] !== "number"
-		) {
-			return {
-				error: "LT must be an object with one mfield of type number",
-				list: [],
-			};
-		}
-		const mkey = Object.keys(query.LT)[0];
-		const output = {
-			error: "",
-			list: [] as Room[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "LT must be an object with one mfield of type number";
-		else if (SECTIONS_MKEY.includes(mkey))
-			output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = rooms.filter((room) => room.getValue(mkey) < query.LT[mkey]);
-		return output;
-	} else if (query.GT !== undefined && query.GT !== null) {
-		if (
-			typeof query.GT !== "object" ||
-			Object.keys(query.GT).length !== 1 ||
-			typeof Object.values(query.GT)[0] !== "number"
-		) {
-			return {
-				error: "GT must be an object with one mfield of type number",
-				list: [],
-			};
-		}
-		const mkey = Object.keys(query.GT)[0];
-		const output = {
-			error: "",
-			list: [] as Room[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "GT must be an object with one mfield of type number";
-		else if (SECTIONS_MKEY.includes(mkey))
-			output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = rooms.filter((room) => room.getValue(mkey) > query.GT[mkey]);
-		return output;
-	} else if (query.EQ !== undefined && query.EQ !== null) {
-		if (
-			typeof query.EQ !== "object" ||
-			Object.keys(query.EQ).length !== 1 ||
-			typeof Object.values(query.EQ)[0] !== "number"
-		) {
-			return {
-				error: "EQ must be an object with one mfield of type number",
-				list: [],
-			};
-		}
-		const mkey = Object.keys(query.EQ)[0];
-		const output = {
-			error: "",
-			list: [] as Room[],
-		};
-		if (!MKEY.includes(mkey)) output.error = "EQ must be an object with one mfield of type number";
-		else if (SECTIONS_MKEY.includes(mkey))
-			output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = rooms.filter((room) => room.getValue(mkey) === query.EQ[mkey]);
-		return output;
-	} else if (query.IS !== undefined && query.IS !== null) {
-		if (
-			typeof query.IS !== "object" ||
-			Object.keys(query.IS).length !== 1 ||
-			typeof Object.values(query.IS)[0] !== "string"
-		) {
-			return {
-				error: "IS must be an object with one sfield of type string",
-				list: [],
-			};
-		}
-		const skey = Object.keys(query.IS)[0];
-		let str: string = String(Object.values(query.IS)[0]);
-		let suffix = true; // str has to be at the end
-		let prefix = true; // str has to be at the beginning
-		if (str.slice(-1) === "*") {
-			suffix = false;
-			str = str.slice(0, -1);
-		}
-		if (str.charAt(0) === "*") {
-			prefix = false;
-			str = str.slice(1);
-		}
-		if (str.includes("*")) {
-			return {
-				error: "IS asterisks can only be first or last character",
-				list: [],
-			};
-		}
-		const output = {
-			error: "",
-			list: [] as Room[],
-		};
-		if (!SKEY.includes(skey)) output.error = "IS must be an object with one sfield of type string";
-		else if (SECTIONS_SKEY.includes(skey))
-			output.error = "Cannot mix course_offerings and facilities fields in one query";
-		else output.list = rooms.filter((room) => includeString(room.getValue(skey), str, prefix, suffix));
-		return output;
-	} else if (Object.keys(query).length > 0) {
-		return {
-			error: "not filter",
-			list: [],
-		};
-	} else {
-		return {
-			error: "no filter",
-			list: rooms,
-		};
+		return { error: "no filter", list: records };
 	}
 }
 
@@ -2321,8 +2070,8 @@ function ordering(a: any, b: any, fields: string[]): number {
 	return 0;
 }
 
-function transformList(list: Section[] | Room[], transformation: { GROUP: string[]; APPLY: any[] }): any[] {
-	const groups = new Map<string, (Section | Room)[]>();
+function transformList(list: FilterableRecord[], transformation: { GROUP: string[]; APPLY: any[] }): any[] {
+	const groups = new Map<string, FilterableRecord[]>();
 	for (const entry of list) {
 		const groupKey = JSON.stringify(transformation.GROUP.map((key) => entry.getValue(key)));
 		const bucket = groups.get(groupKey);
