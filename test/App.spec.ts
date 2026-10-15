@@ -4444,6 +4444,167 @@ describe("REST API v2", function () {
 		});
 	});
 
+	it("Test 25v_3: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (LT course_offerings with seats)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {
+						LT: {
+							seats: 100,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["dept", "code"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_4: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (LT facilities with year)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "facilities",
+				query: {
+					WHERE: {
+						LT: {
+							year: 2015,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["building", "number"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_5: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (GT course_offerings with lat)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {
+						GT: {
+							lat: 49.0,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["dept", "code"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_6: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (GT facilities with avg)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "facilities",
+				query: {
+					WHERE: {
+						GT: {
+							avg: 85,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["building", "number"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_7: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (EQ course_offerings with lon)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {
+						EQ: {
+							lon: -123.0,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["dept", "code"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_8: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (EQ facilities with pass)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "facilities",
+				query: {
+					WHERE: {
+						EQ: {
+							pass: 100,
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["building", "number"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
+	it("Test 25v_9: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Cannot mix course_offerings and facilities fields in one query' (IS course_offerings with furniture)", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: {
+						IS: {
+							furniture: "*Tables*",
+						},
+					},
+					OPTIONS: {
+						COLUMNS: ["dept", "code"],
+					},
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res).to.have.deep.property("body", {
+			error: "Invalid query",
+			message: "Cannot mix course_offerings and facilities fields in one query",
+		});
+	});
+
 	it("Test 25w: POST /api/v2/search should respond with status BAD_REQUEST and error message 'Missing GROUP in TRANSFORMATIONS'", async () => {
 		const res = await request(app)
 			.post("/api/v2/search")
