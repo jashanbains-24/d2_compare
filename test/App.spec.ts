@@ -7763,6 +7763,179 @@ describe("REST API v2", function () {
 		});
 	});
 
+	it("Test 27a: POST /api/v2/search should support IN with exact matches, case-sensitivity, and duplicate strings", async () => {
+		await addTestSections();
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { dept: ["Computer Science", "computer science", "Computer Science"] } },
+					OPTIONS: { COLUMNS: ["dept", "code"], ORDER: "code" },
+				},
+			});
+		expect(res).to.have.property("status", OK);
+		expect(res.body).to.have.length(3);
+	});
+
+	it("Test 27b: POST /api/v2/search IN should treat asterisks as literal characters (no wildcard matching)", async () => {
+		await addTestSections();
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { code: ["31*"] } },
+					OPTIONS: { COLUMNS: ["dept", "code"] },
+				},
+			});
+		expect(res).to.have.property("status", OK);
+		expect(res.body).to.deep.equal([]);
+	});
+
+	it("Test 27c: POST /api/v2/search IN should work on facilities and nest inside AND/OR", async () => {
+		await addTestRooms();
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "facilities",
+				query: {
+					WHERE: {
+						AND: [{ IN: { building: ["DMP", "ICCS"] } }, { OR: [{ IN: { furniture: ["Fixed Tables"] } }] }],
+					},
+					OPTIONS: { COLUMNS: ["building", "number"], ORDER: "number" },
+				},
+			});
+		expect(res).to.have.property("status", OK);
+		expect(res.body).to.have.length(2);
+	});
+
+	it("Test 27d: POST /api/v2/search should reject IN if its value is not an object", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: ["Computer Science"] },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27e: POST /api/v2/search should reject IN if it does not have exactly one key", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { dept: ["Computer Science"], code: ["310"] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27f: POST /api/v2/search should reject IN if it is an empty object", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: {} },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27g: POST /api/v2/search should reject IN if key is an mfield", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { avg: ["80.4"] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27h: POST /api/v2/search should reject IN if key is unknown", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { unknown_field: ["test"] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27i: POST /api/v2/search should reject IN if value is not an array", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { dept: "Computer Science" } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27j: POST /api/v2/search should reject IN if array is empty", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { dept: [] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27k: POST /api/v2/search should reject IN if array contains a non-string element", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { dept: ["Computer Science", 310] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("IN must be an object with one sfield and a non-empty array of strings");
+	});
+
+	it("Test 27l: POST /api/v2/search should reject IN if mixing datasets", async () => {
+		const res = await request(app)
+			.post("/api/v2/search")
+			.send({
+				kind: "course_offerings",
+				query: {
+					WHERE: { IN: { building: ["DMP"] } },
+					OPTIONS: { COLUMNS: ["dept"] },
+				},
+			});
+		expect(res).to.have.property("status", BAD_REQUEST);
+		expect(res.body.message).to.equal("Cannot mix course_offerings and facilities fields in one query");
+	});
+
 	//----------------------------------------------------------------------------------------------------//
 	//                                                                                                    //
 	//                                        COURSES (PLURAL)                                            //
